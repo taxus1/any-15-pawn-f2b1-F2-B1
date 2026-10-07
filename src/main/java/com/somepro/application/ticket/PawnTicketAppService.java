@@ -89,14 +89,27 @@ public class PawnTicketAppService {
     /**
      * 修改：当金 / 起当日期 / 当期月数，任一项留空表示该项不动；到期日期跟着重算。
      * 只有在当的票改得动（利率费率快照不动）。
+     *
+     * 动当金时，折当率按【该类别当下生效配置】现查，卡线用票面上折当当时的估值快照
+     * （当物日后重估不回写票面，票只跟自己的账面算）；不动当金就不查配置。
      */
     public Mono<PawnTicket> update(Long id, String pawnAmount, String startDate, Integer termMonths) {
         BigDecimal amount = pawnAmount == null || pawnAmount.isBlank() ? null : parseAmount(pawnAmount);
         LocalDate start = startDate == null || startDate.isBlank() ? null : parseStartDate(startDate);
 
         return requireTicket(id).flatMap(ticket -> {
-            ticket.revise(amount, start, termMonths);
-            return pawnTicketRepository.update(ticket);
+            if (amount == null) {
+                ticket.revise(null, null, start, termMonths);
+                return pawnTicketRepository.update(ticket);
+            }
+            // 当金要动才去点该类别当下的折当率上限；没配/停用则没有卡线依据，挡回不办理
+            return rateConfigPort.findEnabled(ticket.getCategory())
+                    .switchIfEmpty(Mono.error(new BizException("该当票所属类别（"
+                            + ticket.getCategory().label() + "）没有生效的费率配置，不能改当金")))
+                    .flatMap(rate -> {
+                        ticket.revise(amount, rate.maxLoanRatio(), start, termMonths);
+                        return pawnTicketRepository.update(ticket);
+                    });
         });
     }
 
