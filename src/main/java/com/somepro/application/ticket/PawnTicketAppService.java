@@ -51,6 +51,7 @@ public class PawnTicketAppService {
 
     /**
      * 开票：当户/类别/估值随当物快照带出，利率费率照该类别当前配置抄快照，
+     * 当金不得越过「估值 × 折当率上限」（聚合内核算，顶到上限照常放行，越线挡回），
      * 到期日期按起当日期 + 当期月数推算，新票落在当。
      * 起当日期不传按当天（行里时区）算；票号由仓储按 DP-年份-序号 生成。
      *
@@ -88,15 +89,25 @@ public class PawnTicketAppService {
 
     /**
      * 修改：当金 / 起当日期 / 当期月数，任一项留空表示该项不动；到期日期跟着重算。
-     * 只有在当的票改得动（利率费率快照不动）。
+     * 只有在当的票改得动（利率费率快照不动）。改当金仍受折当率上限约束：
+     * 实时点该类别当前生效的配置来核算，不动当金就不必点配置。
      */
     public Mono<PawnTicket> update(Long id, String pawnAmount, String startDate, Integer termMonths) {
         BigDecimal amount = pawnAmount == null || pawnAmount.isBlank() ? null : parseAmount(pawnAmount);
         LocalDate start = startDate == null || startDate.isBlank() ? null : parseStartDate(startDate);
 
         return requireTicket(id).flatMap(ticket -> {
-            ticket.revise(amount, start, termMonths);
-            return pawnTicketRepository.update(ticket);
+            if (amount == null) {
+                ticket.revise(null, null, start, termMonths);
+                return pawnTicketRepository.update(ticket);
+            }
+            return rateConfigPort.findEnabled(ticket.getCategory())
+                    .switchIfEmpty(Mono.error(new BizException("该当票所属类别（"
+                            + ticket.getCategory().label() + "）没有生效的费率配置，不能改当金")))
+                    .flatMap(rate -> {
+                        ticket.revise(amount, rate.maxLoanRatio(), start, termMonths);
+                        return pawnTicketRepository.update(ticket);
+                    });
         });
     }
 
