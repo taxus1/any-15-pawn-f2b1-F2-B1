@@ -9,8 +9,7 @@ import java.math.BigDecimal;
  * 月利率、月综合费率与折当率上限。
  *
  * 开票时把 monthlyRate / serviceRate 抄进当票做快照：日后配置改了，
- * 已经开出去的票不受影响，对账才对得平。maxLoanRatio 不落票（表里没有这列），
- * 只在开票、改当金当下用来卡「当金 ≤ 估值 × 上限」。
+ * 已经开出去的票不受影响，对账才对得平。maxLoanRatio 不落票（表里没有这列）。
  */
 public record RateConfig(Category category,
                          BigDecimal monthlyRate,

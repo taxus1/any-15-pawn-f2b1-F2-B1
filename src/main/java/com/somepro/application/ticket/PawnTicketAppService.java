@@ -24,7 +24,7 @@ import java.time.format.DateTimeParseException;
  *
  * 出入参用领域对象/基础类型，不认识 PO 与 VO。
  *
- * 开票这条链在这里收口：认物（当物快照端口）→ 抄配置（费率配置端口）→ 聚合卡当金上限
+ * 开票这条链在这里收口：认物（当物快照端口）→ 抄配置（费率配置端口）→ 聚合落票
  * → 仓储在写锁内点「一物一票」、生成票号、联动当物状态落库。
  * 票号唯一与一物一票的并发约束在仓储里；单票自身规则在 PawnTicket 聚合里。
  */
@@ -51,7 +51,7 @@ public class PawnTicketAppService {
 
     /**
      * 开票：当户/类别/估值随当物快照带出，利率费率照该类别当前配置抄快照，
-     * 当金受折当率上限约束，到期日期按起当日期 + 当期月数推算，新票落在当。
+     * 到期日期按起当日期 + 当期月数推算，新票落在当。
      * 起当日期不传按当天（行里时区）算；票号由仓储按 DP-年份-序号 生成。
      *
      * 冻结门禁：当户冻住（FROZEN）后名下不许开新票，办理前先挡一道；与冻结并发的缝由仓储
@@ -88,25 +88,15 @@ public class PawnTicketAppService {
 
     /**
      * 修改：当金 / 起当日期 / 当期月数，任一项留空表示该项不动；到期日期跟着重算。
-     * 只有在当的票改得动；改当金仍受该类别当前折当率上限约束（利率费率快照不动）。
+     * 只有在当的票改得动（利率费率快照不动）。
      */
     public Mono<PawnTicket> update(Long id, String pawnAmount, String startDate, Integer termMonths) {
         BigDecimal amount = pawnAmount == null || pawnAmount.isBlank() ? null : parseAmount(pawnAmount);
         LocalDate start = startDate == null || startDate.isBlank() ? null : parseStartDate(startDate);
 
         return requireTicket(id).flatMap(ticket -> {
-            if (amount == null) {
-                ticket.revise(null, null, start, termMonths);
-                return pawnTicketRepository.update(ticket);
-            }
-            // 改当金要卡上限：上限取该类别当前生效配置（票上不存上限快照）
-            return rateConfigPort.findEnabled(ticket.getCategory())
-                    .switchIfEmpty(Mono.error(new BizException("该类别（"
-                            + ticket.getCategory().label() + "）没有生效的费率配置，不能修改当金")))
-                    .flatMap(rate -> {
-                        ticket.revise(amount, rate.maxLoanRatio(), start, termMonths);
-                        return pawnTicketRepository.update(ticket);
-                    });
+            ticket.revise(amount, start, termMonths);
+            return pawnTicketRepository.update(ticket);
         });
     }
 

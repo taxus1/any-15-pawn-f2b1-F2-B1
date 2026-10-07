@@ -16,7 +16,7 @@ import java.time.LocalDate;
  * 1. 票面上的一切「随物带出」与「随配置抄录」都在开票当下定格：当户以当物底账为准、
  *    类别与估值是当物快照、月利率与月综合费率是该类别当时费率配置的快照 ——
  *    日后当物档案或费率配置再改，都不回写已开出的票，对账才对得平；
- * 2. 当金必须是正数，且「当金 ÷ 估值 ≤ 该类别折当率上限」，顶上去了就挡回；
+ * 2. 当金必须是正数；
  * 3. 到期日期不由人填，由起当日期按当期月数往后推算（plusMonths）；
  * 4. 新开的票默认在当（ACTIVE）；只有在当的票才能修改、才能撤销，
  *    已赎 / 已绝当 / 已撤销的都是定了案的历史票；
@@ -43,7 +43,7 @@ public class PawnTicket extends BaseEntity {
     /** 类别快照，随当物带出。 */
     private Category category;
 
-    /** 当金（元），正数，且不超过估值 × 折当率上限。 */
+    /** 当金（元），正数。 */
     private BigDecimal pawnAmount;
 
     /** 折当时估值快照（元），开票当下从当物抄录。 */
@@ -69,8 +69,8 @@ public class PawnTicket extends BaseEntity {
      * 工厂方法：开立当票。默认落在当（ACTIVE）。
      *
      * @param collateral 当物快照（当户、类别、估值以它为准）
-     * @param pawnAmount 当金，正数且不超过 估值 × 折当率上限
-     * @param rate       该类别当前生效的费率配置，利率费率抄作快照、折当率上限用来卡当金
+     * @param pawnAmount 当金，正数
+     * @param rate       该类别当前生效的费率配置，利率费率抄作快照
      * @param startDate  起当日期（缺省值由应用层补，这里只认非空）
      * @param termMonths 当期月数，至少 1
      */
@@ -83,7 +83,6 @@ public class PawnTicket extends BaseEntity {
         if (rate == null) {
             throw new BizException("缺少该类别生效的费率配置，不能开票");
         }
-        checkLoanCap(pawnAmount, collateral.appraisedValue(), rate.maxLoanRatio());
         if (startDate == null) {
             throw new BizException("起当日期不能为空");
         }
@@ -108,21 +107,15 @@ public class PawnTicket extends BaseEntity {
      * 修改票面上的当金 / 起当日期 / 当期月数。只有在当的票才改得动；
      * 票号、当户、当物、类别、估值与利率费率快照永不改（改了票就和账对不上）。
      *
-     * @param newPawnAmount 新当金；null 表示不动，非 null 必须是正数且仍受折当率上限约束
-     * @param maxLoanRatio  该类别当前的折当率上限（改当金时必传，由应用层查最新配置）；
-     *                      不改当金时传 null，不参与校验
+     * @param newPawnAmount 新当金；null 表示不动，非 null 必须是正数
      * @param newStartDate  新起当日期；null 表示不动
      * @param newTermMonths 新当期月数；null 表示不动，非 null 至少 1
      */
-    public void revise(BigDecimal newPawnAmount, BigDecimal maxLoanRatio,
+    public void revise(BigDecimal newPawnAmount,
                        LocalDate newStartDate, Integer newTermMonths) {
         requireActive("修改");
         if (newPawnAmount != null) {
             requirePositiveAmount(newPawnAmount);
-            if (maxLoanRatio == null) {
-                throw new BizException("缺少该类别生效的折当率上限配置，不能修改当金");
-            }
-            checkLoanCap(newPawnAmount, this.appraisedValue, maxLoanRatio);
             this.pawnAmount = newPawnAmount;
         }
         if (newStartDate != null) {
@@ -160,13 +153,6 @@ public class PawnTicket extends BaseEntity {
     /** 当金必须为正数：null、零、负数一律不收。 */
     private static void requirePositiveAmount(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BizException("当金必须是正数，零和负数一律不收");
-        }
-    }
-
-    /** 折当率上限：当金 ÷ 估值 ≤ 上限，顶上去了就挡回（恰好顶到上限是放得出去的）。 */
-    private static void checkLoanCap(BigDecimal pawnAmount, BigDecimal appraisedValue, BigDecimal maxLoanRatio) {
-        if (pawnAmount == null || pawnAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BizException("当金必须是正数，零和负数一律不收");
         }
     }

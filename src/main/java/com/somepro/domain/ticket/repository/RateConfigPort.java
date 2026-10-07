@@ -9,7 +9,7 @@ import reactor.core.publisher.Mono;
  * 月利率、月综合费率与折当率上限。
  *
  * 每次用每次现查：抄进票里的是开票当下的配置快照，日后配置改了不影响已开出的票；
- * 改当金时按改的那一刻的配置卡上限。只读不写。
+ * 只读不写。
  */
 public interface RateConfigPort {
 
