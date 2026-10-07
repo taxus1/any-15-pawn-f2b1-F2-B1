@@ -166,11 +166,8 @@ public class PawnTicket extends BaseEntity {
 
     /** 折当率上限：当金 ÷ 估值 ≤ 上限，顶上去了就挡回（恰好顶到上限是放得出去的）。 */
     private static void checkLoanCap(BigDecimal pawnAmount, BigDecimal appraisedValue, BigDecimal maxLoanRatio) {
-        BigDecimal cap = appraisedValue.multiply(maxLoanRatio);
-        if (pawnAmount.compareTo(cap) > 0) {
-            throw new BizException("当金超出折当率上限：估值 " + appraisedValue.toPlainString()
-                    + " 元 × 上限 " + maxLoanRatio.toPlainString()
-                    + "，最高可放 " + cap.stripTrailingZeros().toPlainString() + " 元");
+        if (pawnAmount == null || pawnAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BizException("当金必须是正数，零和负数一律不收");
         }
     }
 
